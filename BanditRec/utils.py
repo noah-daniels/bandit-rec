@@ -16,7 +16,7 @@ def my_argmax_dict(dict_, k):
     sorted_ = sorted(dict_.items(), key=lambda x: x[1], reverse=True)
 
     if len(dict_) <= k:
-        return [x for x, y in sorted_]
+        return [x for x, _ in sorted_]
 
     result = []
     while len(result) < k:
@@ -34,7 +34,7 @@ def my_argmax_dict(dict_, k):
         if len(result) + len(batch) <= k:
             result.extend(batch)
         else:
-            result.extend(np.random.choice(batch, k - len(result)))
+            result.extend(np.random.choice(batch, k - len(result), replace=False))
 
     return result
 

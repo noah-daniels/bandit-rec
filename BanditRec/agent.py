@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 
 
 class Agent(ABC):
-    def __init__(self):
+    def __init__(self, **kwargs):
         pass
 
-    def reset(self, item_count):
+    def reset(self, setting):
         self.available_items = set()
         self.t = 0
-        self.reset_hook(item_count)
+        self.reset_hook(setting)
 
     def act(self, k):
         if len(self.available_items) < 1:
@@ -29,7 +29,7 @@ class Agent(ABC):
     def label(self):
         return type(self).__name__
 
-    def reset_hook(self, item_count):
+    def reset_hook(self, setting):
         pass
 
     def start_episode_hook(self, new_items, expired_items):

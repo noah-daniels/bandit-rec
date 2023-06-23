@@ -72,8 +72,36 @@ class Setting(ABC):
 
         plt.show()
 
+    def export(self, filename, tmin=0, tmax=None):
+        tmax = self.episode_count if tmax is None else tmax
+
+        ctrs = np.empty((self.episode_count, self.item_count))
+        times = list()
+
+        for ep in self.start():
+            times.append((ep.new_items, ep.expired_items))
+            for i in ep.new_items:
+                ctrs[ep.t - 1][i] = 0
+            for i in ep.expired_items:
+                ctrs[ep.t][i] = 0
+
+            for i in ep.available_items:
+                ctrs[ep.t][i] = self.get_ctr(i, ep.t)
+
+        ctrs = ctrs[tmin:tmax, :]
+        times = times[tmin:tmax]
+
+        with open(filename, "w") as file:
+            for (a, b), c in zip(times, ctrs):
+                a = " ".join(map(str, a))
+                b = " ".join(map(str, b))
+                c = " ".join(map(str, c))
+                file.write(f"{a}|{b}|{c}\n")
+
     def plot(self, ax, tmin=0, tmax=None):
         tmax = self.episode_count if tmax is None else tmax
+
+        cm = plt.cm.get_cmap("tab20c")
 
         x = np.arange(self.episode_count)
         y = np.empty((self.episode_count, self.item_count))
@@ -89,14 +117,21 @@ class Setting(ABC):
                 y[ep.t][i] = self.get_ctr(i, ep.t)
 
         for i in range(self.item_count):
-            ax.plot(x[tmin:tmax], y[tmin:tmax, i], label=f"arm {i}")
+            ax.plot(
+                x[tmin:tmax],
+                y[tmin:tmax, i],
+                label=f"arm {i}",
+                color=cm.colors[i % len(cm.colors)],
+            )
 
     @property
     def label(self):
         """
         Textual representation of the setting.
         """
-        return f"T={self.episode_count}x{self.episode_length}, K={self.item_count}/{self.k}"
+        el = f"x{self.episode_length}" if self.episode_length > 1 else ""
+        k = f"/{self.k}" if self.k > 1 else ""
+        return f"T={self.episode_count}{el}, K={self.item_count}{k}"
 
     @abstractmethod
     def get_ctr(self, item, t):

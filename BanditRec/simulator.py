@@ -29,15 +29,20 @@ class Simulator:
     def single_seed(self):
         return self.seed_change_interval < 1
 
-    def set_setting(self, setting):
+    def set_setting(self, setting, seed=0):
         if self.single_seed:
+            setting.reseed(seed)
             self.settings = [setting]
         else:
             self.settings = []
             for i in range(self.run_count // self.seed_change_interval):
                 new_s = copy(setting)
-                new_s.reseed(i)
+                new_s.reseed(seed + i)
                 self.settings.append(new_s)
+
+    def set_episode_length(self, episode_length):
+        for s in self.settings:
+            s.episode_length = episode_length
 
     def run_oracle(self):
         schedule = (
@@ -45,19 +50,21 @@ class Simulator:
                 s,
                 OracleAgent(s),
                 self.single_seed,
+                True,
             )
             for s in self.settings
         )
 
-        r, e, i = self.__run_schedule(schedule, len(self.settings))
+        r, e, i = self.__run_schedule(schedule, len(self.settings), False)
         r = np.repeat(r, max(self.seed_change_interval, 1), axis=0)
         if self.single_seed:
             e *= self.run_count
             i *= self.run_count
 
         self.results.set_oracle(self.settings[0], (r, e, i))
+        return (r, e, i)
 
-    def run_agent(self, agent_ctor, agent_params, label=None):
+    def run_agent(self, agent_ctor, agent_params, label=None, progress=True):
         schedule = (
             (
                 self.settings[
@@ -65,25 +72,35 @@ class Simulator:
                 ],
                 agent_ctor(**agent_params),
                 self.single_seed,
+                False,
             )
             for i in range(self.run_count)
         )
 
-        bundle = self.__run_schedule(schedule, self.run_count)
+        bundle = self.__run_schedule(schedule, self.run_count, progress)
         label = agent_ctor(**agent_params).label if label is None else label
         self.results.add(self.settings[0], label, bundle)
+        return bundle
 
-    def __run_schedule(self, schedule, length):
+    def __run_schedule(self, schedule, length, progress):
         with Pool() as pool:
-            results = list(
-                tqdm(
+            if progress:
+                results = list(
+                    tqdm(
+                        pool.imap(
+                            single_run,
+                            schedule,
+                        ),
+                        total=length,
+                    )
+                )
+            else:
+                results = list(
                     pool.imap(
                         single_run,
                         schedule,
-                    ),
-                    total=length,
+                    )
                 )
-            )
 
         rewards = np.stack([r[0] for r in results])
         if self.single_seed:
@@ -145,21 +162,19 @@ class Simulator:
 
 
 def single_run(args):
-    setting, agent, record_ei = args
+    setting, agent, record_ei, is_oracle = args
     np.random.seed()
 
     # init statistics
     rewards = np.zeros(setting.episode_count)
-    if record_ei:
-        estimates = np.zeros((setting.item_count, setting.episode_count))
-        impressions = np.zeros((setting.item_count, setting.episode_count))
-    else:
-        estimates = None
-        impressions = None
+    estimates = np.zeros((setting.item_count, setting.episode_count))
+    impressions = np.zeros((setting.item_count, setting.episode_count))
 
     # prepare agent and setting
-    agent.reset(setting.item_count)
+    agent.reset(setting)
     epsiode_generator = setting.start()
+
+    el = 1 if is_oracle else setting.episode_length
 
     # run episodes
     for episode in epsiode_generator:
@@ -172,7 +187,7 @@ def single_run(args):
                 estimates[item, episode.t] += agent.estimate_ctr(item)
 
         # let agent act
-        for _ in range(setting.episode_length):
+        for _ in range(el):
             items = agent.act(setting.k)
 
             for item in items:
@@ -186,4 +201,4 @@ def single_run(args):
                 if record_ei:
                     impressions[item, episode.t] += 1
 
-    return rewards, estimates, impressions
+    return rewards / el, estimates, impressions / el
